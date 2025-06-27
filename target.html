@@ -1,0 +1,262 @@
+server.mjs
+
+import express from 'express';
+import bodyParser from 'body-parser';
+import cors from 'cors';
+import fetch from 'node-fetch';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+app.use(express.static(__dirname));
+
+app.use(express.json());
+
+
+const PORT = 3000;
+const RECAPTCHA_SECRET_KEY = "6LdnBm8rAAAAACIsAaIRCHGIMC-tqkGv8Vu2hJOM"; // ✅ Your actual secret key
+
+app.post("/verify-captcha", async (req, res) => {
+    try {
+        const token = req.body.token;
+        if (!token) return res.status(400).json({ error: "Token missing" });
+
+        const verifyURL = `https://www.google.com/recaptcha/api/siteverify?secret=${RECAPTCHA_SECRET_KEY}&response=${token}`;
+
+        const response = await fetch(verifyURL, { method: "POST" });
+        const data = await response.json();
+
+        if (data.success) {
+            console.log(data.score);
+            res.json({ success: true, score: data.score });
+        } else {
+            res.status(400).json({ success: false, error: data["error-codes"] });
+        }
+    } catch (error) {
+        console.error("Error verifying reCAPTCHA:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
+});
+
+track.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>User Tracking with reCAPTCHA</title>
+  <script src="https://www.google.com/recaptcha/api.js?render=6LdnBm8rAAAAAJDfrvwczaUhKiwMFu8Yz8s67kkw"></script>
+  <style>
+    body { font-family: Arial; padding: 2rem; }
+    input, button { margin-top: 1rem; display: block; }
+  </style>
+</head>
+<body>
+  <h2>User Tracking Test</h2>
+  <form>
+    <input type="text" id="username" placeholder="Enter your username" />
+    <input type="text" id="email" placeholder="Enter your email" />
+    <button type="submit">Submit</button>
+  </form>
+
+  <script>
+    (function () {
+      const sessionId = crypto.randomUUID();
+      const data = {
+        sessionId,
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        httpHeaders: {
+          "User-Agent": navigator.userAgent,
+          "Accept-Language": navigator.language,
+          "Referer": document.referrer
+        },
+        geoLocation: {},
+        ipInfo: {},
+        asn: "",
+        latencySamples: [],
+        clicks: [],
+        mouseMovements: [],
+        keystrokes: [],
+        formInteractions: [],
+        navigationPatterns: [{ timestamp: Date.now(), url: window.location.pathname }],
+        scrollData: [],
+        recaptchaToken: "",
+        recaptchaScore: null
+      };
+
+      // 1. Mouse movements
+      let mouseCount = 0;
+      const mouseHandler = e => {
+        if (mouseCount < 150) {
+          data.mouseMovements.push({ timestamp: Date.now(), x: e.clientX, y: e.clientY });
+          mouseCount++;
+        } else {
+          document.removeEventListener('mousemove', mouseHandler);
+        }
+      };
+      document.addEventListener('mousemove', mouseHandler);
+
+      // 2. Clicks
+      document.addEventListener('click', e => {
+        data.clicks.push({ timestamp: Date.now(), x: e.clientX, y: e.clientY, element: e.target.id || e.target.tagName });
+      });
+
+      // 3. Keystrokes
+      document.addEventListener('keydown', e => {
+        if (e.target.id) {
+          data.keystrokes.push({ timestamp: Date.now(), field: `#${e.target.id}` });
+        }
+      });
+
+      // 4. Form interactions
+      document.querySelectorAll('input').forEach(input => {
+        ['focus', 'input', 'blur'].forEach(event => {
+          input.addEventListener(event, e => {
+            data.formInteractions.push({
+              timestamp: Date.now(),
+              element: e.target.id || e.target.name || e.target.tagName,
+              event: e.type
+            });
+          });
+        });
+      });
+
+      // 5. Scroll tracking
+      window.addEventListener('scroll', () => {
+        data.scrollData.push({
+          timestamp: Date.now(),
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+          scrollHeight: document.documentElement.scrollHeight,
+          clientHeight: document.documentElement.clientHeight,
+          pageXOffset: window.pageXOffset,
+          pageYOffset: window.pageYOffset
+        });
+      });
+
+      // 6. Latency
+      function measureLatency() {
+        const start = Date.now();
+        fetch("https://www.google.com", { mode: 'no-cors' }).finally(() => {
+          const latency = Date.now() - start;
+          data.latencySamples.push(latency);
+        });
+      }
+      const latencyInterval = setInterval(measureLatency, 500);
+      setTimeout(() => clearInterval(latencyInterval), 5000);
+
+      // 7. GeoLocation
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          data.geoLocation = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          };
+        });
+      }
+
+      // 8. reCAPTCHA v3 Token
+    //   grecaptcha.ready(() => {
+    //     grecaptcha.execute('6LdnBm8rAAAAAJDfrvwczaUhKiwMFu8Yz8s67kkw', { action: 'tracking' })
+    //       .then(token => {
+    //         data.recaptchaToken = token;
+
+    //         // Optionally: Send to server to get score
+    //         fetch("http://localhost:3000/verify-captcha", {
+    //           method: "POST",
+    //           headers: { "Content-Type": "application/json" },
+    //           body: JSON.stringify({ token: token })
+    //         })
+    //           .then(res => res.json())
+    //           .then(result => {
+    //             data.recaptchaScore = result.score || null;
+    //             localStorage.setItem('trackingData-' + sessionId, JSON.stringify(data, null, 2));
+    //           })
+    //           .catch(() => {
+    //             localStorage.setItem('trackingData-' + sessionId, JSON.stringify(data, null, 2));
+    //           });
+    //       });
+    //   });
+
+
+     grecaptcha.ready(function () {
+        grecaptcha.execute('6LdnBm8rAAAAAJDfrvwczaUhKiwMFu8Yz8s67kkw', { action: 'homepage' })
+            .then(function (token) {
+                console.log('🔐 reCAPTCHA Token:', token);
+
+                // ✅ Send the token to your backend server
+                return fetch('http://localhost:3000/verify-captcha', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ token })
+                });
+            })
+            .then(res => res.json())
+            .then(data => {
+                console.log('✅ Captcha verification result:', data);
+
+                if (!data.success) {
+                    alert('❌ reCAPTCHA failed: ' + (data['error-codes'] || []).join(', '));
+                } else {
+                    alert('✅ Captcha verified successfully! You can proceed.');
+                }
+            })
+            .catch(err => {
+                console.error('❗ Captcha POST error:', err);
+                alert('⚠️ Captcha verification failed due to network/server error.');
+            });
+    });
+
+    //   // 9. IPInfo and ASN
+    //   fetch('https://ipinfo.io/json?token=YOUR_TOKEN_HERE')
+    //     .then(res => res.json())
+    //     .then(ipData => {
+    //       data.ipInfo = ipData;
+    //       data.asn = ipData.org || "";
+    //       localStorage.setItem('trackingData-' + sessionId, JSON.stringify(data, null, 2));
+    //     })
+    //     .catch(() => {
+    //       localStorage.setItem('trackingData-' + sessionId, JSON.stringify(data, null, 2));
+    //     });
+
+      // 10. Save on unload
+      window.addEventListener('beforeunload', () => {
+        localStorage.setItem('trackingData-' + sessionId, JSON.stringify(data, null, 2));
+      });
+    })();
+  </script>
+</body>
+</html>
+
+package.JSON
+{
+  "name": "track",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.10.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "node-fetch": "^3.3.2"
+  }
+}
+package-lock.JSON
